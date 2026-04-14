@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code Architecture Analysis</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --bg2: #161b22;
+  --bg3: #1c2333;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text2: #8b949e;
+  --accent: #58a6ff;
+  --accent2: #7ee787;
+  --accent3: #d2a8ff;
+  --accent4: #ff7b72;
+  --accent5: #ffa657;
+  --accent6: #79c0ff;
+  --accent7: #f778ba;
+  --shadow: 0 8px 32px rgba(0,0,0,.4);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace; background: var(--bg); color: var(--text); line-height: 1.6; }
+h1,h2,h3,h4 { font-weight: 600; }
+
+/* Navigation */
+nav { position: fixed; top: 0; left: 0; width: 260px; height: 100vh; background: var(--bg2); border-right: 1px solid var(--border); overflow-y: auto; z-index: 100; padding: 20px 0; }
+nav::-webkit-scrollbar { width: 4px; }
+nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+nav .logo { padding: 0 20px 20px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+nav .logo h2 { font-size: 15px; color: var(--accent); letter-spacing: 1px; }
+nav .logo span { font-size: 11px; color: var(--text2); }
+nav a { display: block; padding: 6px 20px; color: var(--text2); text-decoration: none; font-size: 12.5px; transition: all .2s; border-left: 2px solid transparent; }
+nav a:hover { color: var(--text); background: rgba(88,166,255,.06); }
+nav a.active { color: var(--accent); border-left-color: var(--accent); background: rgba(88,166,255,.08); }
+nav .section-title { padding: 12px 20px 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text2); font-weight: 700; }
+
+/* Main */
+main { margin-left: 260px; padding: 40px 60px 80px; max-width: 1200px; }
+section { margin-bottom: 60px; scroll-margin-top: 30px; }
+h1 { font-size: 28px; color: #fff; margin-bottom: 8px; }
+h1 span { color: var(--accent); }
+.subtitle { color: var(--text2); font-size: 13px; margin-bottom: 40px; }
+h2 { font-size: 20px; color: #fff; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+h2 .tag { font-size: 11px; font-weight: 400; color: var(--bg); background: var(--accent); padding: 2px 8px; border-radius: 10px; margin-left: 8px; vertical-align: middle; }
+h3 { font-size: 15px; color: var(--accent3); margin: 24px 0 10px; }
+h4 { font-size: 13px; color: var(--accent5); margin: 16px 0 8px; }
+p { margin-bottom: 12px; font-size: 13.5px; }
+
+/* Cards */
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.card h4 { margin-top: 0; }
+.card .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); margin-bottom: 6px; }
+.stat { font-size: 24px; font-weight: 700; color: var(--accent); }
+.stat-small { font-size: 13px; color: var(--text2); }
+
+/* Diagram boxes */
+.diagram { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin: 16px 0; overflow-x: auto; }
+.diagram pre { font-size: 12px; line-height: 1.5; color: var(--text); white-space: pre; }
+
+/* Flow */
+.flow { display: flex; flex-direction: column; gap: 0; margin: 16px 0; }
+.flow-item { display: flex; align-items: flex-start; gap: 16px; }
+.flow-line { display: flex; flex-direction: column; align-items: center; min-width: 32px; }
+.flow-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--accent); background: var(--bg); flex-shrink: 0; position: relative; z-index: 1; }
+.flow-dot.active { background: var(--accent); }
+.flow-connector { width: 2px; background: var(--border); flex-grow: 1; min-height: 20px; }
+.flow-content { padding-bottom: 16px; flex: 1; }
+.flow-content .title { font-size: 13px; font-weight: 600; color: var(--accent2); }
+.flow-content .desc { font-size: 12px; color: var(--text2); margin-top: 4px; }
+.flow-content code { font-size: 11.5px; background: rgba(88,166,255,.1); padding: 1px 5px; border-radius: 3px; color: var(--accent6); }
+
+/* Code */
+pre.code { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 16px; font-size: 12px; overflow-x: auto; margin: 12px 0; line-height: 1.6; }
+code { font-family: inherit; }
+.kw { color: var(--accent4); }
+.fn { color: var(--accent3); }
+.str { color: var(--accent2); }
+.cm { color: var(--text2); }
+.ty { color: var(--accent5); }
+.num { color: var(--accent6); }
+
+/* Table */
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12.5px; }
+th { background: var(--bg3); color: var(--accent); text-align: left; padding: 10px 14px; border-bottom: 2px solid var(--border); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+td { padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:hover td { background: rgba(88,166,255,.03); }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+.badge-green { background: rgba(126,231,135,.15); color: var(--accent2); }
+.badge-blue { background: rgba(88,166,255,.15); color: var(--accent); }
+.badge-purple { background: rgba(210,168,255,.15); color: var(--accent3); }
+.badge-orange { background: rgba(255,166,87,.15); color: var(--accent5); }
+.badge-red { background: rgba(255,123,114,.15); color: var(--accent4); }
+.badge-pink { background: rgba(247,120,186,.15); color: var(--accent7); }
+
+/* Dep graph */
+.dep-graph { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
+.dep-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dep-node { background: var(--bg3); border: 1px solid var(--border); padding: 6px 14px; border-radius: 6px; font-size: 12px; white-space: nowrap; transition: all .2s; cursor: default; }
+.dep-node:hover { border-color: var(--accent); transform: translateY(-1px); }
+.dep-node.core { border-color: var(--accent); color: var(--accent); }
+.dep-node.ui { border-color: var(--accent3); color: var(--accent3); }
+.dep-node.service { border-color: var(--accent2); color: var(--accent2); }
+.dep-node.tool { border-color: var(--accent5); color: var(--accent5); }
+.dep-node.state { border-color: var(--accent4); color: var(--accent4); }
+.dep-arrow { color: var(--text2); font-size: 18px; }
+
+/* Layer diagram */
+.layers { display: flex; flex-direction: column; gap: 2px; margin: 16px 0; }
+.layer { border-radius: 8px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; }
+.layer-name { font-weight: 700; font-size: 13px; }
+.layer-files { font-size: 11px; opacity: .7; }
+.layer-1 { background: linear-gradient(135deg, rgba(88,166,255,.15), rgba(88,166,255,.05)); border: 1px solid rgba(88,166,255,.3); }
+.layer-2 { background: linear-gradient(135deg, rgba(210,168,255,.15), rgba(210,168,255,.05)); border: 1px solid rgba(210,168,255,.3); }
+.layer-3 { background: linear-gradient(135deg, rgba(126,231,135,.15), rgba(126,231,135,.05)); border: 1px solid rgba(126,231,135,.3); }
+.layer-4 { background: linear-gradient(135deg, rgba(255,166,87,.15), rgba(255,166,87,.05)); border: 1px solid rgba(255,166,87,.3); }
+.layer-5 { background: linear-gradient(135deg, rgba(255,123,114,.15), rgba(255,123,114,.05)); border: 1px solid rgba(255,123,114,.3); }
+.layer-6 { background: linear-gradient(135deg, rgba(247,120,186,.15), rgba(247,120,186,.05)); border: 1px solid rgba(247,120,186,.3); }
+
+/* Tabs */
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.tab { padding: 8px 16px; font-size: 12px; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Annotation */
+.note { background: rgba(88,166,255,.08); border-left: 3px solid var(--accent); padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 12px 0; font-size: 12.5px; }
+.warn { background: rgba(255,166,87,.08); border-left-color: var(--accent5); }
+.note strong { color: var(--accent); }
+.warn strong { color: var(--accent5); }
+
+/* Responsive */
+@media (max-width: 900px) {
+  nav { display: none; }
+  main { margin-left: 0; padding: 20px; }
+}
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <div class="logo">
+    <h2>CLAUDE CODE</h2>
+    <span>Architecture Deep Dive</span>
+  </div>
+  <div class="section-title">Overview</div>
+  <a href="#overview">Project Overview</a>
+  <a href="#layers">Architecture Layers</a>
+  <a href="#deps">Module Dependencies</a>
+  <div class="section-title">Core Runtime</div>
+  <a href="#boot">Bootstrap Flow</a>
+  <a href="#query">Query Loop</a>
+  <a href="#stream">Streaming Pipeline</a>
+  <a href="#engine">QueryEngine</a>
+  <div class="section-title">Subsystems</div>
+  <a href="#tools">Tool System</a>
+  <a href="#tools-impl">Tool Implementations</a>
+  <a href="#permissions">Permissions</a>
+  <a href="#classifier">YOLO Classifier</a>
+  <a href="#hooks">Hook System</a>
+  <div class="section-title">Services</div>
+  <a href="#api">API Client</a>
+  <a href="#providers">Provider Selection</a>
+  <a href="#mcp">MCP Protocol</a>
+  <a href="#compact">Compaction</a>
+  <a href="#context">Context Building</a>
+  <a href="#oauth">OAuth</a>
+  <div class="section-title">UI &amp; State</div>
+  <a href="#state">State Management</a>
+  <a href="#ink">Ink Rendering</a>
+  <a href="#render-pipeline">Render Pipeline</a>
+</nav>
+
+<main>
+
+<!-- ===================== OVERVIEW ===================== -->
+<section id="overview">
+<h1><span>&gt;</span> Claude Code Architecture</h1>
+<p class="subtitle">Reverse-engineered Anthropic Claude Code CLI &mdash; 全架构深度分析</p>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="label">Runtime</div>
+    <div class="stat">Bun</div>
+    <div class="stat-small">ESM + TSX + react-jsx</div>
+  </div>
+  <div class="card">
+    <div class="label">Build</div>
+    <div class="stat">Code Splitting</div>
+    <div class="stat-small">Bun.build() &rarr; dist/ (~450 chunks)</div>
+  </div>
+  <div class="card">
+    <div class="label">Feature Flags</div>
+    <div class="stat">31</div>
+    <div class="stat-small">All polyfilled to false</div>
+  </div>
+  <div class="card">
+    <div class="label">API Providers</div>
+    <div class="stat">4</div>
+    <div class="stat-small">Anthropic / Bedrock / Vertex / Azure</div>
+  </div>
+</div>
+</section>
+
+<!-- ===================== LAYERS ===================== -->
+<section id="layers">
+<h2>Architecture Layers <span class="tag">6 Layers</span></h2>
+<p>系统采用分层架构，从用户输入到 API 通信，每层职责清晰：</p>
+
+<div class="layers">
+  <div class="layer layer-1">
+    <div>
+      <div class="layer-name">Layer 1 &mdash; Entry &amp; Bootstrap</div>
+      <div class="layer-files">cli.tsx &rarr; main.tsx &rarr; init.ts &rarr; setup.ts</div>
+    </div>
+    <span class="badge badge-blue">Entrypoint</span>
+  </div>
+  <div class="layer layer-2">
+    <div>
+      <div class="layer-name">Layer 2 &mdash; UI &amp; Rendering</div>
+      <div class="layer-files">REPL.tsx, Ink Engine, Components, Messages, PromptInput</div>
+    </div>
+    <span class="badge badge-purple">React/Ink</span>
+  </div>
+  <div class="layer layer-3">
+    <div>
+      <div class="layer-name">Layer 3 &mdash; Orchestration</div>
+      <div class="layer-files">QueryEngine.ts, query.ts, toolOrchestration.ts</div>
+    </div>
+    <span class="badge badge-green">Core Loop</span>
+  </div>
+  <div class="layer layer-4">
+    <div>
+      <div class="layer-name">Layer 4 &mdash; Tool System</div>
+      <div class="layer-files">Tool.ts, tools.ts, BashTool, FileEditTool, AgentTool, ...</div>
+    </div>
+    <span class="badge badge-orange">30+ Tools</span>
+  </div>
+  <div class="layer layer-5">
+    <div>
+      <div class="layer-name">Layer 5 &mdash; Services</div>
+      <div class="layer-files">API Client, MCP, OAuth, Compaction, Hooks, Permissions</div>
+    </div>
+    <span class="badge badge-red">Infrastructure</span>
+  </div>
+  <div class="layer layer-6">
+    <div>
+      <div class="layer-name">Layer 6 &mdash; State &amp; Config</div>
+      <div class="layer-files">AppState, Store, bootstrap/state, Settings, CLAUDE.md</div>
+    </div>
+    <span class="badge badge-pink">Shared State</span>
+  </div>
+</div>
+</section>
+
+<!-- ===================== DEPS ===================== -->
+<section id="deps">
+<h2>Module Dependencies <span class="tag">Dependency Map</span></h2>
+<p>核心模块间的依赖关系。箭头表示"依赖于"方向：</p>
+
+<div class="diagram"><pre>
+                         ┌─────────────┐
+                         │   cli.tsx    │ ← True Entrypoint
+                         │  (polyfill) │
+                         └──────┬──────┘
+                                │ dynamic import
+                         ┌──────▼──────┐
+                         │  main.tsx   │ ← Commander.js CLI
+                         │ (~4700 LOC) │
+                         └──────┬──────┘
+                    ┌───────────┼───────────┐
+                    │           │           │
+             ┌──────▼──┐ ┌─────▼─────┐ ┌──▼────────┐
+             │ init.ts │ │  setup.ts  │ │  REPL.tsx  │
+             │ (1-time)│ │(workspace) │ │  (~5000    │
+             └────┬────┘ └─────┬─────┘ │   LOC)     │
+                  │            │       └──────┬─────┘
+          ┌───────┴─────┐      │              │
+          │             │      │       ┌──────▼──────┐
+    ┌─────▼───┐  ┌──────▼──┐  │       │ QueryEngine │
+    │telemetry│  │ config   │  │       │ (~1300 LOC) │
+    │  OAuth  │  │ settings │  │       └──────┬──────┘
+    └─────────┘  └──────────┘  │              │
+                               │       ┌──────▼──────┐
+                               │       │  query.ts   │ ← Core Agent Loop
+                               │       │ (~1730 LOC) │
+                               │       └──┬───┬───┬──┘
+                               │          │   │   │
+                    ┌──────────▼──┐ ┌─────▼─┐ │ ┌─▼──────────┐
+                    │ permissions │ │tools.ts│ │ │ autoCompact │
+                    │   system    │ │registry│ │ │  compaction │
+                    └─────────────┘ └───┬───┘ │ └─────────────┘
+                                        │     │
+                    ┌───────────────────▼┐ ┌──▼──────────┐
+                    │   Tool Impls       │ │ claude.ts    │
+                    │ Bash/Edit/Agent/.. │ │ API Client   │
+                    └────────────────────┘ │ (~2000 LOC)  │
+                                           └──────┬──────┘
+                                      ┌───────────┼──────────┐
+                                ┌─────▼───┐ ┌─────▼──┐ ┌─────▼────┐
+                                │ Bedrock │ │ Vertex │ │ Foundry  │
+                                │   SDK   │ │  SDK   │ │   SDK    │
+                                └─────────┘ └────────┘ └──────────┘
+</pre></div>
+
+<h3>Key Dependency Chains</h3>
+<div class="card-grid">
+  <div class="card">
+    <h4>User Input Chain</h4>
+    <div class="dep-graph">
+      <div class="dep-row">
+        <span class="dep-node ui">stdin</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-node ui">Ink App</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-node ui">REPL</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-node core">QueryEngine</span>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <h4>API Call Chain</h4>
+    <div class="dep-graph">
+      <div class="dep-row">
+        <span class="dep-node core">query.ts</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-node service">claude.ts</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-node service">client.ts</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-node tool">SDK</span>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <h4>Tool Execution Chain</h4>
+    <div class="dep-graph">
+      <div class="dep-row">
+        <span class="dep-node core">query.ts</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-node state">permissions</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-node tool">hooks</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-node tool">tool.call()</span>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <h4>State Chain</h4>
+    <div class="dep-graph">
+      <div class="dep-row">
+        <span class="dep-node state">Store</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-node state">AppState</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-node ui">React Context</span>
+        <span class="dep-arrow">&rarr;</span>
+        <span class="dep-node ui">Components</span>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ===================== BOOTSTRAP ===================== -->
+<section id="boot">
+<h2>Bootstrap Flow <span class="tag">Entry</span></h2>
+<p>从 <code>cli.tsx</code> 到 REPL 完全启动的完整流程：</p>
+
+<div class="flow">
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">cli.tsx &mdash; Polyfill Injection</div>
+      <div class="desc">注入 <code>feature()</code> (always false), <code>globalThis.MACRO</code> (VERSION=2.1.888), <code>BUILD_TARGET='external'</code></div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Fast-path Checks</div>
+      <div class="desc"><code>--version</code> 零导入直接返回。其他 fast-path：<code>--chrome-*</code>, <code>--daemon-*</code> 等（大多 feature-gated 为死代码）</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Dynamic Import main.tsx</div>
+      <div class="desc">触发模块求值。并行启动：<code>startMdmRawRead()</code>（MDM 配置读取）+ <code>startKeychainPrefetch()</code>（macOS 钥匙串预取）。约 180 个 import 求值完成</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">main() &rarr; run()</div>
+      <div class="desc">创建 Commander.js 程序。<code>preAction</code> hook 中依次执行：等待 MDM/Keychain &rarr; <code>init()</code> &rarr; <code>initSinks()</code> &rarr; <code>runMigrations()</code></div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">init() &mdash; One-time Initialization (memoized)</div>
+      <div class="desc">
+        <code>enableConfigs()</code> &rarr; <code>applySafeConfigEnvironmentVariables()</code> &rarr; <code>applyExtraCACertsFromConfig()</code> (TLS) &rarr; <code>setupGracefulShutdown()</code><br>
+        并行 fire-and-forget：1P event logging, OAuth info, JetBrains detection, repo detection<br>
+        <code>configureGlobalMTLS()</code> &rarr; <code>configureGlobalAgents()</code> (proxy) &rarr; <code>preconnectAnthropicApi()</code> (TCP+TLS 预连接)
+      </div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Default Action Handler</div>
+      <div class="desc">解析所有 CLI 选项 &rarr; <code>setup()</code>（工作区、会话、git root）&rarr; 加载 commands/agents &rarr; 模型解析 &rarr; MCP 解析</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Critical Fork: Print vs REPL</div>
+      <div class="desc">
+        <strong>Print mode</strong> (<code>-p</code> / 非 TTY)：创建 headlessStore, 连接 MCP, 调用 <code>runHeadless()</code><br>
+        <strong>REPL mode</strong>（默认）：显示信任对话框 &rarr; 初始化遥测 &rarr; 构建 <code>AppState</code> &rarr; <code>launchRepl()</code> 挂载 Ink TUI
+      </div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div></div>
+    <div class="flow-content">
+      <div class="title">REPL Running</div>
+      <div class="desc">启动后台预取：initUser, getUserContext, 系统上下文, tips, 模型能力, 文件计数, analytics gates, MCP URLs, 变更检测器</div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <strong>Performance:</strong> 延迟加载无处不在。<code>--version</code> 实现零导入。MDM 读取和 Keychain 预取与 180+ 个模块导入并行执行，节省 ~135ms。Print mode 跳过子命令注册，节省 ~65ms。
+</div>
+</section>
+
+<!-- ===================== QUERY ===================== -->
+<section id="query">
+<h2>Query Loop — 核心代理循环 <span class="tag">query.ts</span></h2>
+<p><code>query.ts</code> 中的 <code>queryLoop()</code> 是整个系统的心脏 —— 一个 <code>while(true)</code> 无限循环，驱动着 AI 代理的完整交互周期。</p>
+
+<div class="diagram"><pre>
+┌─────────────────────────────────────────────────────────┐
+│                    queryLoop() - while(true)            │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │ Phase 1: Pre-processing                         │    │
+│  │  • getMessagesAfterCompactBoundary()            │    │
+│  │  • applyToolResultBudget()                      │    │
+│  │  • microcompact()                               │    │
+│  │  • Build system prompt                          │    │
+│  │  • autocompact() if tokens > threshold          │    │
+│  │  • Blocking limit check                         │    │
+│  └───────────────────┬─────────────────────────────┘    │
+│                      ▼                                  │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │ Phase 2: API Call & Streaming                   │    │
+│  │  • callModel() → SSE stream                     │    │
+│  │  • for await (message of stream)                │    │
+│  │    ├── Handle fallback → tombstone & retry      │    │
+│  │    ├── Detect tool_use blocks → needsFollowUp   │    │
+│  │    ├── StreamingToolExecutor (parallel exec)    │    │
+│  │    └── Withhold recoverable errors              │    │
+│  └───────────────────┬─────────────────────────────┘    │
+│                      ▼                                  │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │ Phase 3: Turn Decision                          │    │
+│  │                                                 │    │
+│  │  needsFollowUp == false?                        │    │
+│  │  ├─ YES → Try recovery:                         │    │
+│  │  │   • prompt-too-long → reactive compact       │    │
+│  │  │   • max output tokens → escalate/retry (×3)  │    │
+│  │  │   • Stop hooks → inject blocking errors      │    │
+│  │  │   • All passed → return {reason: 'completed'}│    │
+│  │  │                                              │    │
+│  │  └─ NO (has tool_use) → Phase 4                 │    │
+│  └───────────────────┬─────────────────────────────┘    │
+│                      ▼                                  │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │ Phase 4: Tool Execution                         │    │
+│  │  • runTools() or StreamingToolExecutor          │    │
+│  │    ├── Concurrent-safe tools → parallel (×10)   │    │
+│  │    └── Non-concurrent tools → serial            │    │
+│  │  • Generate tool use summary (async, Haiku)     │    │
+│  │  • Process queued commands & attachments         │    │
+│  │  • Refresh MCP tools                            │    │
+│  │  • Check maxTurns limit                         │    │
+│  │  • state.messages = [...msgs, ...results]       │    │
+│  │  • continue → next iteration                    │    │
+│  └─────────────────────────────────────────────────┘    │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+</pre></div>
+
+<h3>Loop State</h3>
+<pre class="code"><span class="kw">type</span> <span class="ty">State</span> = {
+  <span class="fn">messages</span>: Message[]              <span class="cm">// 完整对话历史</span>
+  <span class="fn">toolUseContext</span>: ToolUseContext    <span class="cm">// 工具、权限、abort 等上下文</span>
+  <span class="fn">autoCompactTracking</span>: ...         <span class="cm">// 自动压缩状态追踪</span>
+  <span class="fn">turnCount</span>: <span class="ty">number</span>                <span class="cm">// 轮次计数</span>
+  <span class="fn">maxOutputTokensRecoveryCount</span>: <span class="ty">number</span>  <span class="cm">// 输出 token 恢复重试次数 (max 3)</span>
+  <span class="fn">hasAttemptedReactiveCompact</span>: <span class="ty">boolean</span> <span class="cm">// 是否已尝试响应式压缩</span>
+  <span class="fn">transition</span>: Continue | undefined  <span class="cm">// 上一次循环继续的原因</span>
+}</pre>
+
+<h3>Termination Conditions</h3>
+<table>
+  <tr><th>Reason</th><th>Condition</th><th>Type</th></tr>
+  <tr><td><code>completed</code></td><td>模型正常完成，无 tool_use</td><td><span class="badge badge-green">Normal</span></td></tr>
+  <tr><td><code>max_turns</code></td><td>超过 maxTurns 限制</td><td><span class="badge badge-blue">Limit</span></td></tr>
+  <tr><td><code>blocking_limit</code></td><td>Token 数达到阻断限制</td><td><span class="badge badge-red">Error</span></td></tr>
+  <tr><td><code>model_error</code></td><td>不可恢复的 API 错误</td><td><span class="badge badge-red">Error</span></td></tr>
+  <tr><td><code>aborted_streaming</code></td><td>用户在流式传输期间中断</td><td><span class="badge badge-orange">Abort</span></td></tr>
+  <tr><td><code>aborted_tools</code></td><td>用户在工具执行期间中断</td><td><span class="badge badge-orange">Abort</span></td></tr>
+  <tr><td><code>prompt_too_long</code></td><td>Prompt 过长且恢复失败</td><td><span class="badge badge-red">Error</span></td></tr>
+  <tr><td><code>stop_hook_prevented</code></td><td>Stop hook 阻止了继续</td><td><span class="badge badge-purple">Hook</span></td></tr>
+  <tr><td><code>hook_stopped</code></td><td>工具级 hook 阻止了继续</td><td><span class="badge badge-purple">Hook</span></td></tr>
+</table>
+</section>
+
+<!-- ===================== STREAMING ===================== -->
+<section id="stream">
+<h2>Streaming Pipeline <span class="tag">API → Screen</span></h2>
+<p>从 API SSE 事件流到终端渲染的完整数据流：</p>
+
+<div class="diagram"><pre>
+ Anthropic API (SSE)
+       │
+       ▼
+ ┌───────────────────────────────────────────────────┐
+ │  claude.ts: queryModelWithStreaming()              │
+ │  Events: message_start → content_block_start      │
+ │        → content_block_delta → content_block_stop │
+ │        → message_delta → message_stop             │
+ │                                                   │
+ │  Yields: StreamEvent | AssistantMessage           │
+ └─────────────────────┬─────────────────────────────┘
+                       ▼
+ ┌───────────────────────────────────────────────────┐
+ │  query.ts: queryLoop()                            │
+ │  • Accumulates assistantMessages[]                │
+ │  • Detects tool_use blocks → toolUseBlocks[]      │
+ │  • StreamingToolExecutor: start tools in parallel │
+ │  • Withholds recoverable errors                   │
+ │                                                   │
+ │  Yields: StreamEvent | Message | Attachment       │
+ └─────────────────────┬─────────────────────────────┘
+                       ▼
+ ┌───────────────────────────────────────────────────┐
+ │  QueryEngine.ts: submitMessage()                  │
+ │  • Normalizes to SDKMessage format                │
+ │  • Tracks usage (input/output/cache tokens)       │
+ │  • Persists transcript                            │
+ │  • Enforces budget limits                         │
+ │                                                   │
+ │  Yields: SDKMessage (result/assistant/system/...) │
+ └─────────────────────┬─────────────────────────────┘
+                       ▼
+ ┌───────────────────────────────────────────────────┐
+ │  REPL.tsx: onQueryEvent()                         │
+ │  • setMessages() → React state update             │
+ │  • setStreamingToolUses()                         │
+ │  • setStreamingThinking()                         │
+ │                                                   │
+ │  Triggers: React re-render                        │
+ └─────────────────────┬─────────────────────────────┘
+                       ▼
+ ┌───────────────────────────────────────────────────┐
+ │  Ink Engine: onRender()                           │
+ │  1. renderer() → renderNodeToOutput() → Frame     │
+ │  2. log.render(prev, curr) → Diff (Patch[])      │
+ │  3. optimize(diff) → merged patches              │
+ │  4. writeDiffToTerminal() → ANSI → stdout        │
+ └───────────────────────────────────────────────────┘
+</pre></div>
+</section>
+
+<!-- ===================== ENGINE ===================== -->
+<section id="engine">
+<h2>QueryEngine — 会话编排器 <span class="tag">QueryEngine.ts</span></h2>
+<p>QueryEngine 是 <code>query()</code> 的上层封装，管理会话级关注点：</p>
+
+<div class="card-grid">
+  <div class="card">
+    <h4>Input Processing</h4>
+    <p style="font-size:12px;">处理斜杠命令、创建用户消息、判断是否需要 API 调用。<code>processUserInput()</code> 分发 /help, /clear, /compact 等命令。</p>
+  </div>
+  <div class="card">
+    <h4>System Prompt</h4>
+    <p style="font-size:12px;"><code>fetchSystemPromptParts()</code> 构建系统提示词，包含 CLAUDE.md、git 状态、工具描述、记忆文件。</p>
+  </div>
+  <div class="card">
+    <h4>Transcript Persistence</h4>
+    <p style="font-size:12px;">每次 API 调用前持久化对话记录，确保中断的会话可恢复（<code>/resume</code>）。</p>
+  </div>
+  <div class="card">
+    <h4>Budget Enforcement</h4>
+    <p style="font-size:12px;">追踪 <code>totalUsage</code>（输入/输出/缓存 token），检查 <code>maxBudgetUsd</code> 和 structured output 重试限制。</p>
+  </div>
+</div>
+
+<h3>Two-Layer Generator Architecture</h3>
+<div class="note">
+  <strong>分离原则：</strong> <code>query.ts</code> 是内层循环，纯粹关注 API 交互和工具执行机制，可注入 deps 进行隔离测试。<code>QueryEngine</code> 是外层编排器，处理现实世界的整合：文件 I/O、会话持久化、SDK 协议合规和预算限制。
+</div>
+</section>
+
+<!-- ===================== TOOLS ===================== -->
+<section id="tools">
+<h2>Tool System <span class="tag">30+ Tools</span></h2>
+
+<h3>Tool Interface</h3>
+<pre class="code"><span class="kw">type</span> <span class="ty">Tool</span>&lt;Input, Output, Progress&gt; = {
+  <span class="fn">name</span>: <span class="ty">string</span>                        <span class="cm">// 主名称 e.g. 'Bash', 'Edit', 'Agent'</span>
+  <span class="fn">aliases</span>?: <span class="ty">string[]</span>                  <span class="cm">// 遗留名称 e.g. ['Task']</span>
+  <span class="fn">inputSchema</span>: Input                   <span class="cm">// Zod schema for 输入验证</span>
+  <span class="fn">maxResultSizeChars</span>: <span class="ty">number</span>           <span class="cm">// 超过阈值持久化到磁盘</span>
+  <span class="fn">strict</span>?: <span class="ty">boolean</span>                    <span class="cm">// 启用 API 严格模式</span>
+
+  <span class="fn">call</span>(input, context): <span class="ty">ToolResult</span>    <span class="cm">// 核心执行逻辑</span>
+  <span class="fn">checkPermissions</span>(input, ctx): <span class="ty">PermissionResult</span>
+  <span class="fn">validateInput</span>(input): <span class="ty">ValidationResult</span>
+
+  <span class="fn">isEnabled</span>(): <span class="ty">boolean</span>                <span class="cm">// 工具是否可用</span>
+  <span class="fn">isConcurrencySafe</span>(): <span class="ty">boolean</span>        <span class="cm">// 是否可并行执行 (default: false)</span>
+  <span class="fn">isReadOnly</span>(): <span class="ty">boolean</span>               <span class="cm">// 是否只读 (default: false)</span>
+
+  <span class="fn">renderToolUseMessage</span>(): <span class="ty">ReactNode</span>   <span class="cm">// 终端渲染：正在执行</span>
+  <span class="fn">renderToolResultMessage</span>(): <span class="ty">ReactNode</span> <span class="cm">// 终端渲染：执行结果</span>
+}</pre>
+
+<h3>Tool Registry Logic (tools.ts)</h3>
+<table>
+  <tr><th>Category</th><th>Tools</th><th>Condition</th></tr>
+  <tr>
+    <td><span class="badge badge-green">Always</span></td>
+    <td>Bash, Edit, Read, Write, Agent, Glob, Grep, WebFetch, WebSearch, NotebookEdit, AskUserQuestion, Skill, EnterPlanMode, ExitPlanMode, TodoWrite, Brief, TaskStop</td>
+    <td>无条件加载</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-blue">Conditional</span></td>
+    <td>TaskCreate/Get/Update/List, TeamCreate/Delete, ToolSearch, PowerShell, LSP, EnterWorktree/ExitWorktree</td>
+    <td>功能开关 / 环境检测</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-red">Feature-gated</span></td>
+    <td>Sleep, RemoteTrigger, Monitor, SendUserFile, PushNotification, WebBrowser, Snip, ListPeers, Workflow, CtxInspect, TerminalCapture</td>
+    <td><code>feature()</code> = false → 全部不可用</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-purple">Ant-only</span></td>
+    <td>REPL, SuggestBackgroundPR, Config, Tungsten</td>
+    <td><code>USER_TYPE === 'ant'</code> → 永不可用</td>
+  </tr>
+</table>
+
+<h3>Tool Execution Concurrency</h3>
+<div class="note">
+  工具按并发安全性分区执行：<strong>并发安全</strong>工具（Grep, Glob, Read 等只读操作）以最多 10 个并行执行；<strong>非并发</strong>工具（Bash, FileEdit 等写操作）串行执行。<code>StreamingToolExecutor</code> 优化：工具在 API 还在流式返回时就开始执行。
+</div>
+</section>
+
+<!-- ===================== TOOLS-IMPL ===================== -->
+<section id="tools-impl">
+<h2>Tool Implementations <span class="tag">Key Tools</span></h2>
+
+<div class="tabs" data-tab-group="tools">
+  <div class="tab active" data-tab="bash">BashTool</div>
+  <div class="tab" data-tab="edit">FileEditTool</div>
+  <div class="tab" data-tab="agent">AgentTool</div>
+  <div class="tab" data-tab="grep">GrepTool</div>
+</div>
+
+<div class="tab-content active" data-tab="bash" data-tab-group="tools">
+  <h3>BashTool — Shell Command Execution</h3>
+  <table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Name</td><td><code>'Bash'</code></td></tr>
+    <tr><td>Max Result</td><td>30,000 chars</td></tr>
+    <tr><td>Concurrency</td><td>当 isReadOnly 时安全</td></tr>
+    <tr><td>Key Input</td><td><code>command</code>, <code>timeout</code>, <code>run_in_background</code>, <code>dangerouslyDisableSandbox</code></td></tr>
+  </table>
+  <h4>Execution Flow</h4>
+  <p>1. 检查 <code>_simulatedSedEdit</code>（直接文件写入绕过 shell）</p>
+  <p>2. 调用 <code>exec()</code>（沙箱设置、abort 信号、超时）</p>
+  <p>3. 进度循环：<code>Promise.race</code> 在结果和进度信号之间</p>
+  <p>4. 支持后台任务（<code>run_in_background</code>）和自动后台化（超时/预算）</p>
+  <p>5. 大输出持久化到磁盘（>64MB 截断）</p>
+  <h4>Permission</h4>
+  <p>AST 级别的命令解析 + 通配符模式匹配 + 沙箱决策逻辑 + 基于分类器的权限检查。复合命令如 <code>ls && git push</code> 对每个子命令独立匹配。</p>
+</div>
+
+<div class="tab-content" data-tab="edit" data-tab-group="tools">
+  <h3>FileEditTool — String Replacement Editing</h3>
+  <table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Name</td><td><code>'Edit'</code></td></tr>
+    <tr><td>Max Result</td><td>100,000 chars</td></tr>
+    <tr><td>Key Input</td><td><code>file_path</code>, <code>old_string</code>, <code>new_string</code>, <code>replace_all</code></td></tr>
+  </table>
+  <h4>Execution Flow</h4>
+  <p>1. 展开路径 → 2. 追踪文件历史 → 3. 读取内容并检查陈旧性</p>
+  <p>4. <code>findActualString</code> 智能引号归一化 → 5. 生成 patch</p>
+  <p>6. 写入磁盘（保留编码和行尾格式）→ 7. 通知 LSP/VSCode</p>
+  <p>8. 更新 <code>readFileState</code> 缓存</p>
+  <h4>Validation</h4>
+  <p>拒绝 old=new, UNC 路径防御, 文件大小限制 (1GiB), 多匹配检查, 陈旧性验证, Claude 设置文件特殊保护</p>
+</div>
+
+<div class="tab-content" data-tab="agent" data-tab-group="tools">
+  <h3>AgentTool — Subagent Delegation</h3>
+  <table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Name</td><td><code>'Agent'</code> (alias: <code>'Task'</code>)</td></tr>
+    <tr><td>Max Result</td><td>100,000 chars</td></tr>
+    <tr><td>Concurrency</td><td>Always safe (delegates to sub-tools)</td></tr>
+    <tr><td>Key Input</td><td><code>prompt</code>, <code>subagent_type</code>, <code>model</code>, <code>run_in_background</code>, <code>isolation</code></td></tr>
+  </table>
+  <h4>Execution Flow</h4>
+  <p>1. 解析 agent 类型（fork/named）→ 2. 检查 team 约束</p>
+  <p>3. 过滤 deny rules 和 MCP 需求 → 4. 构建子代理系统 prompt</p>
+  <p>5. 组装 worker 工具池 → 6. 可选创建 git worktree 隔离</p>
+  <p><strong>异步路径</strong>：注册异步代理，<code>void</code> 闭包中启动 <code>runAsyncAgentLifecycle()</code>，立即返回 <code>async_launched</code></p>
+  <p><strong>同步路径</strong>：迭代 <code>runAgent()</code> 生成器，<code>Promise.race</code> 处理后台化信号</p>
+</div>
+
+<div class="tab-content" data-tab="grep" data-tab-group="tools">
+  <h3>GrepTool — Regex Search (ripgrep)</h3>
+  <table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Name</td><td><code>'Grep'</code> (userFacingName: <code>'Search'</code>)</td></tr>
+    <tr><td>Max Result</td><td>20,000 chars</td></tr>
+    <tr><td>Concurrency</td><td>Always safe (read-only)</td></tr>
+    <tr><td>Key Input</td><td><code>pattern</code>, <code>path</code>, <code>glob</code>, <code>output_mode</code>, context flags</td></tr>
+  </table>
+  <h4>Output Modes</h4>
+  <p><code>content</code>：显示匹配行（支持 -A/-B/-C 上下文）</p>
+  <p><code>files_with_matches</code>（默认）：按 mtime 排序的文件路径列表</p>
+  <p><code>count</code>：解析 <code>filename:count</code> 格式，总计匹配数</p>
+</div>
+</section>
+
+<!-- ===================== PERMISSIONS ===================== -->
+<section id="permissions">
+<h2>Permissions System <span class="tag">6300+ LOC</span></h2>
+
+<h3>Permission Modes</h3>
+<table>
+  <tr><th>Mode</th><th>Behavior</th><th>Availability</th></tr>
+  <tr><td><code>default</code></td><td>每次工具使用都提示用户</td><td><span class="badge badge-green">公开</span></td></tr>
+  <tr><td><code>plan</code></td><td>仅允许读取/推理，不允许写操作</td><td><span class="badge badge-green">公开</span></td></tr>
+  <tr><td><code>acceptEdits</code></td><td>自动批准工作目录内的文件编辑</td><td><span class="badge badge-green">公开</span></td></tr>
+  <tr><td><code>bypassPermissions</code></td><td>绕过所有权限提示（deny/ask 规则仍生效）</td><td><span class="badge badge-green">公开</span></td></tr>
+  <tr><td><code>dontAsk</code></td><td>所有 ask → deny（永不提示）</td><td><span class="badge badge-green">公开</span></td></tr>
+  <tr><td><code>auto</code></td><td>AI 分类器自动决策</td><td><span class="badge badge-purple">Ant-only</span></td></tr>
+</table>
+
+<h3>Permission Check Pipeline</h3>
+<div class="diagram"><pre>
+Tool Call Request
+       │
+       ▼
+┌──────────────────────────────────────────────┐
+│ Step 1: Deny/Ask/Safety Checks               │
+│ (Cannot be bypassed, even in bypass mode)    │
+│                                              │
+│  1a. Tool-level deny rule? ──────→ DENY      │
+│  1b. Tool-level ask rule? ───────→ ASK       │
+│  1c. tool.checkPermissions()                 │
+│      └── deny? ──────────────────→ DENY      │
+│      └── ask + requires interaction? → ASK   │
+│  1d. Content-specific ask rules              │
+│  1e. Safety checks (.git/, .claude/) ─→ ASK  │
+│                                              │
+├──────────────────────────────────────────────┤
+│ Step 2: Mode-based Decisions                 │
+│                                              │
+│  2a. bypassPermissions? ─────────→ ALLOW     │
+│  2b. Tool in always-allow list? ──→ ALLOW    │
+│                                              │
+├──────────────────────────────────────────────┤
+│ Step 3: Default → ASK                        │
+│                                              │
+│  passthrough → prompt user                   │
+└──────────────────┬───────────────────────────┘
+                   ▼
+         Post-processing:
+         • dontAsk mode: ASK → DENY
+         • auto mode: ASK → YOLO Classifier
+         • headless: ASK → PermissionRequest hooks → DENY
+</pre></div>
+
+<h3>Settings Hierarchy</h3>
+<table>
+  <tr><th>Priority</th><th>Source</th><th>File</th></tr>
+  <tr><td>1 (lowest)</td><td>User Settings</td><td><code>~/.claude/settings.json</code></td></tr>
+  <tr><td>2</td><td>Project Settings</td><td><code>.claude/settings.json</code></td></tr>
+  <tr><td>3</td><td>Local Settings</td><td><code>.claude/settings.local.json</code></td></tr>
+  <tr><td>4</td><td>CLI Flag Settings</td><td><code>--settings</code> flag</td></tr>
+  <tr><td>5 (highest)</td><td>Policy Settings</td><td>Enterprise managed settings</td></tr>
+</table>
+</section>
+
+<!-- ===================== CLASSIFIER ===================== -->
+<section id="classifier">
+<h2>YOLO Classifier — Auto Mode AI 分类器 <span class="tag">Security</span></h2>
+<p>在 auto 模式下，当权限检查结果为 ASK 时，YOLO 分类器使用 AI 判断是否允许操作。</p>
+
+<div class="card-grid">
+  <div class="card">
+    <h4>Fast Paths (跳过分类器)</h4>
+    <p style="font-size:12px;">
+      <strong>1. acceptEdits simulation</strong>：如果 acceptEdits 模式会允许的操作，直接允许<br>
+      <strong>2. Safe tool allowlist</strong>：FileRead, Grep, Glob, TodoWrite 等只读工具跳过分类器
+    </p>
+  </div>
+  <div class="card">
+    <h4>Two-Stage XML Classifier</h4>
+    <p style="font-size:12px;">
+      <strong>Stage 1 (fast)</strong>：64 tokens, stop on <code>&lt;/block&gt;</code>。如果 <code>&lt;block&gt;no&lt;/block&gt;</code> → 立即允许<br>
+      <strong>Stage 2 (thinking)</strong>：4096 tokens, chain-of-thought 推理，减少误报
+    </p>
+  </div>
+</div>
+
+<h3>Dangerous Permission Detection</h3>
+<div class="warn">
+  <strong>Auto mode 安全机制：</strong> 进入 auto 模式时，系统扫描并临时剥离"危险"权限规则。包括：
+  <code>Bash(python:*)</code>, <code>Bash(node:*)</code>, <code>Bash(eval:*)</code>, <code>Bash(*)</code> 等代码执行许可。
+  这些规则被暂存在 <code>strippedDangerousRules</code> 中，退出 auto 模式时恢复。
+</div>
+
+<h3>Denial Tracking</h3>
+<p>连续 3 次分类器阻止 或 累计 20 次 → 回退到用户交互提示。Headless 模式下直接抛出 <code>AbortError</code>。</p>
+</section>
+
+<!-- ===================== HOOKS ===================== -->
+<section id="hooks">
+<h2>Hook System <span class="tag">Lifecycle</span></h2>
+
+<h3>Hook Events</h3>
+<table>
+  <tr><th>Event</th><th>Timing</th><th>Can Decide Permission</th></tr>
+  <tr><td><code>PreToolUse</code></td><td>工具执行前</td><td><span class="badge badge-green">Yes</span> allow/deny/ask</td></tr>
+  <tr><td><code>PostToolUse</code></td><td>工具执行成功后</td><td><span class="badge badge-red">No</span> (可阻止继续)</td></tr>
+  <tr><td><code>PostToolUseFailure</code></td><td>工具执行失败后</td><td><span class="badge badge-red">No</span></td></tr>
+  <tr><td><code>SessionStart</code> / <code>SessionEnd</code></td><td>会话生命周期</td><td><span class="badge badge-red">No</span></td></tr>
+  <tr><td><code>PreCompact</code> / <code>PostCompact</code></td><td>上下文压缩前后</td><td><span class="badge badge-red">No</span></td></tr>
+  <tr><td><code>UserPromptSubmit</code></td><td>用户提交输入时</td><td><span class="badge badge-red">No</span></td></tr>
+  <tr><td><code>Stop</code></td><td>模型完成响应时</td><td><span class="badge badge-red">No</span> (可注入阻止错误)</td></tr>
+</table>
+
+<h3>Hook Types</h3>
+<div class="card-grid">
+  <div class="card">
+    <h4><span class="badge badge-blue">command</span> Shell Hook</h4>
+    <p style="font-size:12px;">运行 shell 命令。支持 bash/powershell/auto。通过 <code>CLAUDE_HOOK_INPUT</code> 环境变量接收 JSON 输入。</p>
+  </div>
+  <div class="card">
+    <h4><span class="badge badge-purple">prompt</span> LLM Hook</h4>
+    <p style="font-size:12px;">发送 prompt 给 LLM。可指定 model 和 max_tokens。</p>
+  </div>
+  <div class="card">
+    <h4><span class="badge badge-green">agent</span> Verifier Hook</h4>
+    <p style="font-size:12px;">运行独立的 Claude 会话作为验证器。支持 max_turns 和工具配置。</p>
+  </div>
+  <div class="card">
+    <h4><span class="badge badge-orange">http</span> Webhook Hook</h4>
+    <p style="font-size:12px;">发送 HTTP webhook。支持 URL、headers、body、认证。企业可限制目标 URL。</p>
+  </div>
+</div>
+
+<div class="note">
+  <strong>Hook 与权限规则的关系：</strong> Hook 返回 <code>allow</code> 时，<code>resolveHookPermissionDecision()</code> 仍会检查 <code>checkRuleBasedPermissions()</code>。即 Hook 的 allow 决策<strong>无法覆盖</strong> settings.json 中的 deny/ask 规则。
+</div>
+</section>
+
+<!-- ===================== API ===================== -->
+<section id="api">
+<h2>API Client <span class="tag">claude.ts ~2000 LOC</span></h2>
+
+<h3>Request Building Pipeline</h3>
+<div class="flow">
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Beta Header Assembly</div>
+      <div class="desc">模型特定 betas + 动态 betas (advisor, tool search, effort, fast mode, AFK, cache editing, structured outputs, task budgets)</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Tool Schema Construction</div>
+      <div class="desc">每个 Tool 映射为 API JSON Schema。Deferred tools 使用 <code>defer_loading: true</code>。已通过 <code>tool_reference</code> 发现的工具重新包含。</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Message Normalization</div>
+      <div class="desc"><code>normalizeMessagesForAPI()</code>：修复 tool_use/tool_result 配对，剥离 advisor blocks（如果 beta header 不存在），限制媒体项 (cap: 100)</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">System Prompt Construction</div>
+      <div class="desc">Attribution header + CLI sysprompt prefix + 用户系统 prompt blocks + Advisor 指令 + Chrome tool search 指令</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Cache Breakpoint Injection</div>
+      <div class="desc"><code>addCacheBreakpoints()</code>：添加 <code>cache_control</code> 标记用于 prompt caching。支持 1 小时 TTL 和全局 scope。</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div></div>
+    <div class="flow-content">
+      <div class="title">Streaming Request</div>
+      <div class="desc">通过 Anthropic SDK 发起 SSE streaming。Watchdog 监控空闲超时 (90s)。失败时回退到非流式请求。<code>withRetry()</code> 管理 529 错误、fallback model 切换和认证恢复。</div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ===================== PROVIDERS ===================== -->
+<section id="providers">
+<h2>Provider Selection <span class="tag">4 Providers</span></h2>
+
+<table>
+  <tr><th>Provider</th><th>Env Trigger</th><th>SDK</th><th>Auth</th></tr>
+  <tr>
+    <td><span class="badge badge-blue">Anthropic (1P)</span></td>
+    <td>Default</td>
+    <td><code>@anthropic-ai/sdk</code></td>
+    <td>API Key or OAuth Token</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-orange">AWS Bedrock</span></td>
+    <td><code>CLAUDE_CODE_USE_BEDROCK=1</code></td>
+    <td><code>@anthropic-ai/bedrock-sdk</code></td>
+    <td>AWS Credentials / Bearer Token</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-green">Google Vertex</span></td>
+    <td><code>CLAUDE_CODE_USE_VERTEX=1</code></td>
+    <td><code>@anthropic-ai/vertex-sdk</code></td>
+    <td>GCP Credentials (GoogleAuth)</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-purple">Azure Foundry</span></td>
+    <td><code>CLAUDE_CODE_USE_FOUNDRY=1</code></td>
+    <td><code>@anthropic-ai/foundry-sdk</code></td>
+    <td>API Key / Azure AD Token</td>
+  </tr>
+</table>
+
+<div class="note">
+  <strong>优先级：</strong> Bedrock &gt; Vertex &gt; Foundry &gt; First Party。所有 provider 共享：<code>x-app: 'cli'</code> header, 600s 超时, proxy 支持, <code>x-client-request-id</code> UUID 注入。
+</div>
+</section>
+
+<!-- ===================== MCP ===================== -->
+<section id="mcp">
+<h2>MCP — Model Context Protocol <span class="tag">34 Files, 12000+ LOC</span></h2>
+<p>MCP 是一个开放协议，允许 Claude Code 连接外部工具服务器。</p>
+
+<h3>Transport Types</h3>
+<div class="card-grid">
+  <div class="card">
+    <h4>stdio</h4>
+    <p style="font-size:12px;">本地子进程服务器。通过 <code>command</code> + <code>args[]</code> 启动。</p>
+  </div>
+  <div class="card">
+    <h4>sse / http</h4>
+    <p style="font-size:12px;">远程 SSE 或 Streamable HTTP 服务器。支持 OAuth 认证。</p>
+  </div>
+  <div class="card">
+    <h4>ws</h4>
+    <p style="font-size:12px;">WebSocket 服务器。支持 headers 配置。</p>
+  </div>
+  <div class="card">
+    <h4>sdk</h4>
+    <p style="font-size:12px;">SDK 管理的 transport。由 SDK 注入。</p>
+  </div>
+</div>
+
+<h3>Configuration Scopes (7 个来源)</h3>
+<table>
+  <tr><th>Priority</th><th>Scope</th><th>Source</th></tr>
+  <tr><td>Override</td><td><span class="badge badge-red">Enterprise</span></td><td><code>managed-mcp.json</code> — 存在时独占，忽略其他来源</td></tr>
+  <tr><td>4</td><td><span class="badge badge-orange">Local</span></td><td><code>.claude/</code> 项目配置</td></tr>
+  <tr><td>3</td><td><span class="badge badge-blue">Project</span></td><td><code>.mcp.json</code> 文件（CWD 向上遍历）</td></tr>
+  <tr><td>2</td><td><span class="badge badge-purple">User</span></td><td><code>~/.claude.json</code> → mcpServers</td></tr>
+  <tr><td>1</td><td><span class="badge badge-green">Plugin</span></td><td>插件提供的服务器</td></tr>
+  <tr><td>*</td><td>Dynamic</td><td>SDK / <code>--mcp-config</code> 注入</td></tr>
+  <tr><td>*</td><td>Claude.ai</td><td>Connector 服务器</td></tr>
+</table>
+</section>
+
+<!-- ===================== COMPACT ===================== -->
+<section id="compact">
+<h2>Compaction — 上下文压缩 <span class="tag">Context Management</span></h2>
+<p>当对话过长时，旧消息被摘要替换以保持在模型上下文窗口内。</p>
+
+<h3>Compaction Hierarchy</h3>
+<table>
+  <tr><th>Level</th><th>Name</th><th>Trigger</th><th>Description</th></tr>
+  <tr>
+    <td>1</td>
+    <td><span class="badge badge-blue">Microcompact</span></td>
+    <td>每次迭代</td>
+    <td>轻量级工具结果压缩（截断大输出）</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td><span class="badge badge-green">Autocompact</span></td>
+    <td>Token &gt; 阈值</td>
+    <td>主要机制：发送对话给 Claude 生成 9 段结构化摘要。阈值 = contextWindow - 13,000 - max(outputTokens, 20,000)</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td><span class="badge badge-orange">Reactive compact</span></td>
+    <td>prompt-too-long 错误</td>
+    <td>最后手段恢复机制，在 API 返回 prompt-too-long 后触发</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td><span class="badge badge-purple">Snip (feature-gated)</span></td>
+    <td>手动 / 启发式</td>
+    <td>从历史中间移除消息段，保留首尾</td>
+  </tr>
+</table>
+
+<h3>Post-Compact State Restoration</h3>
+<p>压缩后系统重建上下文：清除 readFileState 缓存 → 重新附加最近 5 个已读文件（50K token 预算）→ 重新注入 plan/skill 附件 → 重新声明 deferred tools 和 agent listing → 执行 SessionStart hooks。</p>
+
+<div class="note">
+  <strong>Circuit Breaker:</strong> 连续 3 次 autocompact 失败后停止尝试（<code>MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES</code>）。Compact 请求本身超过上下文限制时，通过 <code>truncateHeadForPTLRetry()</code> 丢弃最旧的 API 轮次组并重试（最多 3 次）。
+</div>
+</section>
+
+<!-- ===================== CONTEXT ===================== -->
+<section id="context">
+<h2>Context Building <span class="tag">context.ts + claudemd.ts</span></h2>
+
+<h3>System Context</h3>
+<p>通过 <code>getSystemContext()</code> 构建（会话级 memoized）：</p>
+<pre class="code"><span class="cm">// 并行执行 5 个 git 命令</span>
+{
+  <span class="fn">gitStatus</span>: {
+    <span class="str">currentBranch</span>   <span class="cm">// git rev-parse --abbrev-ref HEAD</span>
+    <span class="str">mainBranch</span>      <span class="cm">// main/master 自动检测</span>
+    <span class="str">gitUser</span>         <span class="cm">// git config user.name</span>
+    <span class="str">status</span>          <span class="cm">// git status --short (截断 2000 chars)</span>
+    <span class="str">recentCommits</span>   <span class="cm">// git log --oneline -n 5</span>
+  }
+}</pre>
+
+<h3>CLAUDE.md Discovery</h3>
+<p>按优先级加载指令文件（后加载的优先级更高）：</p>
+<table>
+  <tr><th>Priority</th><th>Type</th><th>Source</th></tr>
+  <tr><td>1</td><td>Managed</td><td><code>/etc/claude-code/CLAUDE.md</code>, <code>.claude/rules/*.md</code></td></tr>
+  <tr><td>2</td><td>User</td><td><code>~/.claude/CLAUDE.md</code>, <code>~/.claude/rules/*.md</code></td></tr>
+  <tr><td>3</td><td>Project</td><td><code>CLAUDE.md</code>, <code>.claude/CLAUDE.md</code>, <code>.claude/rules/*.md</code>（从 root 到 CWD 每个目录）</td></tr>
+  <tr><td>4</td><td>Local</td><td><code>CLAUDE.local.md</code>（每个目录，gitignored）</td></tr>
+  <tr><td>5</td><td>AutoMem</td><td><code>MEMORY.md</code>（自动记忆入口）</td></tr>
+</table>
+
+<h4>特殊功能</h4>
+<p><strong>@include 指令</strong>：内存文件可用 <code>@path</code>, <code>@./relative</code>, <code>@~/home</code>, <code>@/absolute</code> 引用其他文件。防循环引用，最大深度 5 层。</p>
+<p><strong>Frontmatter 路径</strong>：规则文件可用 YAML frontmatter 指定 glob 模式，仅在目标文件匹配时加载。</p>
+<p><strong>HTML 注释剥离</strong>：Block 级 HTML 注释被剥离，代码块内的注释保留。</p>
+</section>
+
+<!-- ===================== OAUTH ===================== -->
+<section id="oauth">
+<h2>OAuth Service <span class="tag">Authentication</span></h2>
+<p>实现 OAuth 2.0 Authorization Code Flow with PKCE：</p>
+
+<div class="flow">
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Create AuthCodeListener</div>
+      <div class="desc">启动本地 HTTP 服务器（随机端口），等待授权回调</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Generate PKCE Values</div>
+      <div class="desc"><code>codeVerifier</code> (random) + <code>codeChallenge</code> (SHA-256) + <code>state</code> (random)</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Dual Auth Flow</div>
+      <div class="desc"><strong>Automatic</strong>：浏览器重定向到 <code>localhost:PORT/callback</code><br><strong>Manual</strong>：用户粘贴授权码。两条路径并发等待。</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Token Exchange</div>
+      <div class="desc">用授权码换取 access/refresh tokens。获取 profile 信息（订阅类型、限速等级）。</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div></div>
+    <div class="flow-content">
+      <div class="title">Subscription Detection</div>
+      <div class="desc"><code>claude_max</code> → 'max', <code>claude_pro</code> → 'pro', <code>claude_enterprise</code> → 'enterprise', <code>claude_team</code> → 'team'</div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ===================== STATE ===================== -->
+<section id="state">
+<h2>State Management <span class="tag">Dual-Store</span></h2>
+<p>系统使用两个独立的状态存储：</p>
+
+<div class="card-grid">
+  <div class="card">
+    <h4>AppState (React-connected)</h4>
+    <p style="font-size:12px;">~100 个字段。通过 Zustand-style store 管理，React Context 提供。包含：settings, permissions, MCP, plugins, tasks, agents, UI view state, notifications 等。</p>
+    <p style="font-size:12px;">通过 <code>useAppState(selector)</code> hook 订阅。使用 <code>useSyncExternalStore</code> 实现无撕裂读取。</p>
+  </div>
+  <div class="card">
+    <h4>Bootstrap State (Module-level)</h4>
+    <p style="font-size:12px;">~90 个字段。纯模块级单例，通过 getter/setter 函数访问。包含：sessionId, cost tracking, model state, API state, hooks, latches, scroll state 等。</p>
+    <p style="font-size:12px;">文件顶部注释："DO NOT ADD MORE STATE HERE" 和 "THINK THRICE BEFORE MODIFYING"。</p>
+  </div>
+</div>
+
+<h3>Store Implementation (35 LOC)</h3>
+<pre class="code"><span class="kw">function</span> <span class="fn">createStore</span>&lt;T&gt;(initialState: T, onChange?) {
+  <span class="kw">let</span> state = initialState
+  <span class="kw">const</span> listeners = <span class="kw">new</span> Set&lt;Listener&gt;()
+
+  <span class="kw">return</span> {
+    <span class="fn">getState</span>: () =&gt; state,
+    <span class="fn">setState</span>: (updater) =&gt; {
+      <span class="kw">const</span> next = updater(state)
+      <span class="kw">if</span> (Object.is(next, state)) <span class="kw">return</span>  <span class="cm">// identity check</span>
+      onChange?.({ newState: next, oldState: state })
+      state = next
+      listeners.forEach(l =&gt; l())
+    },
+    <span class="fn">subscribe</span>: (listener) =&gt; { <span class="cm">/* returns unsubscribe */</span> }
+  }
+}</pre>
+
+<h3>React Provider Tree</h3>
+<div class="diagram"><pre>
+FpsMetricsProvider
+  └── StatsProvider
+       └── AppStateProvider ← createStore(initialState, onChangeAppState)
+            └── MailboxProvider
+                 └── VoiceProvider (passthrough)
+                      └── {REPL Screen}
+</pre></div>
+
+<h3>State Change Side Effects (onChangeAppState)</h3>
+<p>每次 AppState 变更时触发：</p>
+<ul style="font-size:12.5px; padding-left: 20px;">
+  <li><strong>Permission Mode 同步</strong>：外化模式名称，通知 CCR</li>
+  <li><strong>Model 持久化</strong>：保存/移除 user settings 中的模型选择</li>
+  <li><strong>View 持久化</strong>：映射 expandedView 到全局配置的 legacy booleans</li>
+  <li><strong>Settings 变更</strong>：清除 auth 缓存，重新应用环境变量</li>
+</ul>
+</section>
+
+<!-- ===================== INK ===================== -->
+<section id="ink">
+<h2>Ink Rendering Engine <span class="tag">Custom Fork</span></h2>
+<p>自定义的 Ink 框架（forked），实现终端 TUI 渲染。</p>
+
+<h3>Core Architecture</h3>
+<div class="card-grid">
+  <div class="card">
+    <h4>Double Buffering</h4>
+    <p style="font-size:12px;"><code>frontFrame</code>（当前显示）和 <code>backFrame</code>（上一帧）交替。防止同时读写同一缓冲区。</p>
+  </div>
+  <div class="card">
+    <h4>React Reconciler</h4>
+    <p style="font-size:12px;">使用 <code>ConcurrentRoot</code> 模式的 React reconciler。在 commit 阶段计算 Yoga 布局。</p>
+  </div>
+  <div class="card">
+    <h4>Screen Diff</h4>
+    <p style="font-size:12px;">逐 cell 比较当前帧和上一帧，生成 <code>Patch[]</code> 差异。<code>optimize()</code> 合并/去重 patches。</p>
+  </div>
+  <div class="card">
+    <h4>Performance</h4>
+    <p style="font-size:12px;">charCache 缓存 ANSI 标记化。StylePool 全会话级 interned 样式。Blit 优化跳过未变子树。帧节流 + 4x 滚动排水。</p>
+  </div>
+</div>
+
+<h3>Render Pipeline (onRender)</h3>
+<div class="flow">
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">renderer()</div>
+      <div class="desc">遍历 React DOM 树 → 收集 write/blit/clear/clip 操作 → <code>Output.get()</code> 应用到 Screen buffer</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Selection & Highlighting</div>
+      <div class="desc">Alt-screen 模式下：应用选择覆盖（反转 cell 样式）+ 搜索高亮</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Damage Tracking & Diff</div>
+      <div class="desc"><code>log.render(prev, frame)</code> → 生成 Diff（Patch 数组：stdout, styleStr, cursorMove, clear, ...）</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div><div class="flow-connector"></div></div>
+    <div class="flow-content">
+      <div class="title">Optimize & Write</div>
+      <div class="desc"><code>optimize(diff)</code> 合并 patches → <code>writeDiffToTerminal()</code> 序列化为 ANSI 转义序列 → stdout.write()</div>
+    </div>
+  </div>
+  <div class="flow-item">
+    <div class="flow-line"><div class="flow-dot active"></div></div>
+    <div class="flow-content">
+      <div class="title">Pool Reset</div>
+      <div class="desc">每 5 分钟重置 char/hyperlink pools 防止无限增长。Scroll drain 在滚动活跃时暂停后台 intervals (150ms 防抖)。</div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ===================== RENDER PIPELINE ===================== -->
+<section id="render-pipeline">
+<h2>Complete Render Pipeline <span class="tag">End-to-End</span></h2>
+<p>从用户按键到终端像素更新的完整链路：</p>
+
+<div class="diagram"><pre>
+ ╔══════════════════════════════════════════════════════════════╗
+ ║  Phase 1: Input                                             ║
+ ║                                                             ║
+ ║  stdin bytes                                                ║
+ ║    → App.handleReadable()                                   ║
+ ║      → parseMultipleKeypresses(state, input)                ║
+ ║        → reconciler.discreteUpdates(processKeysInBatch)     ║
+ ║          → EventEmitter.emit('input', key)                  ║
+ ║            → useInput hooks in REPL.tsx                     ║
+ ║              → onSubmit() → onQuery()                       ║
+ ╠══════════════════════════════════════════════════════════════╣
+ ║  Phase 2: Query                                             ║
+ ║                                                             ║
+ ║  QueryEngine.submitMessage()                                ║
+ ║    → processUserInput() (slash commands)                    ║
+ ║    → for await (msg of query({...}))                        ║
+ ║        → API streaming → tool execution → loop              ║
+ ╠══════════════════════════════════════════════════════════════╣
+ ║  Phase 3: State Update                                      ║
+ ║                                                             ║
+ ║  onQueryEvent(message)                                      ║
+ ║    → setMessages(prev => [...prev, msg])                    ║
+ ║    → React re-render cycle                                  ║
+ ║      → Messages → MessageRow → Tool components              ║
+ ╠══════════════════════════════════════════════════════════════╣
+ ║  Phase 4: Layout & Render                                   ║
+ ║                                                             ║
+ ║  React commit                                               ║
+ ║    → Yoga layout calculation                                ║
+ ║    → scheduleRender (throttled)                             ║
+ ║      → onRender()                                           ║
+ ║        → renderer() → Output → Screen buffer                ║
+ ╠══════════════════════════════════════════════════════════════╣
+ ║  Phase 5: Terminal Output                                   ║
+ ║                                                             ║
+ ║  Screen diff → Patch[] → optimize() → ANSI → stdout.write  ║
+ ╚══════════════════════════════════════════════════════════════╝
+</pre></div>
+
+<h3>Input Pipeline Detail</h3>
+<table>
+  <tr><th>Component</th><th>Responsibility</th></tr>
+  <tr><td>App.handleReadable()</td><td>从 stdin 读取原始字节</td></tr>
+  <tr><td>parseMultipleKeypresses()</td><td>解析为 <code>ParsedInput[]</code>（key / mouse / response）</td></tr>
+  <tr><td>processKeysInBatch()</td><td>路由：response → querier, mouse → 点击/拖拽/悬停, key → focus/input</td></tr>
+  <tr><td>useInput hooks</td><td>REPL 组件中的输入处理回调</td></tr>
+</table>
+
+<h3>Mouse Event Handling</h3>
+<p>支持多次点击检测（双击=选词，三击=选行），拖拽选择（startSelection/extendSelection/updateSelection），超链接检测（300ms 延迟区分单击和双击）。</p>
+
+<h3>Raw Mode Reference Counting</h3>
+<p>多个组件可请求 raw mode。引用计数确保 stdin 仅在计数在 0 和 1 之间转换时切换。</p>
+
+<div style="height:80px"></div>
+
+<p style="text-align:center; color: var(--text2); font-size: 12px;">
+  Generated by Claude Code Architecture Analyzer<br>
+  Based on reverse-engineered Claude Code CLI source analysis
+</p>
+
+</main>
+
+<script>
+// Tab switching
+document.querySelectorAll('.tabs').forEach(tabGroup => {
+  tabGroup.addEventListener('click', e => {
+    const tab = e.target.closest('.tab');
+    if (!tab) return;
+    const group = tabGroup.dataset.tabGroup;
+    const target = tab.dataset.tab;
+    tabGroup.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelectorAll(`.tab-content[data-tab-group="${group}"]`).forEach(c => {
+      c.classList.toggle('active', c.dataset.tab === target);
+    });
+  });
+});
+
+// Active nav highlighting
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('nav a');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      navLinks.forEach(a => a.classList.remove('active'));
+      const link = document.querySelector(`nav a[href="#${entry.target.id}"]`);
+      if (link) link.classList.add('active');
+    }
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+sections.forEach(s => observer.observe(s));
+
+// Smooth scroll
+document.querySelectorAll('nav a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+</script>
+
+</body>
+</html>

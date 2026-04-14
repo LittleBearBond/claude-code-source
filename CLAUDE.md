@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **reverse-engineered / decompiled** version of Anthropic's official Claude Code CLI tool. The goal is to restore core functionality while trimming secondary capabilities. Many modules are stubbed or feature-flagged off. The codebase has ~1341 tsc errors from decompilation (mostly `unknown`/`never`/`{}` types) — these do **not** block Bun runtime execution.
+This is a **reverse-engineered / decompiled** version of Anthropic's official Claude Code CLI tool. The goal is to restore core functionality while trimming secondary capabilities. Many modules are stubbed or feature-flagged off. The codebase has many tsc errors from decompilation (mostly `unknown`/`never`/`{}` types) — these do **not** block Bun runtime execution.
 
 ## Commands
 
@@ -19,18 +19,33 @@ bun run dev
 # Pipe mode
 echo "say hello" | bun run src/entrypoints/cli.tsx -p
 
-# Build (outputs dist/cli.js, ~25MB)
+# Build (code-splitting output to dist/, entry dist/cli.js + ~450 chunks)
 bun run build
+
+# Tests (bun:test framework)
+bun test                           # run all tests
+bun test src/utils/__tests__/diff  # run a single test file (partial path match)
+bun test --filter "adjustHunk"     # run tests matching a name pattern
+
+# Lint & format (Biome)
+bun run lint                       # lint src/
+bun run lint:fix                   # lint with auto-fix
+bun run format                     # format src/ (write)
+
+# Health check (code size, lint, tests, build status)
+bun run health
 ```
 
-No test runner is configured. No linter is configured.
+### Pre-commit Hook
+
+A Biome lint pre-commit hook is configured via `.githooks/pre-commit` (activated by the `prepare` script after `bun install`). It runs `biome lint` on staged `src/**/*.{ts,tsx,js,jsx}` files and blocks the commit on lint errors.
 
 ## Architecture
 
 ### Runtime & Build
 
 - **Runtime**: Bun (not Node.js). All imports, builds, and execution use Bun APIs.
-- **Build**: `bun build src/entrypoints/cli.tsx --outdir dist --target bun` — single-file bundle.
+- **Build**: `Bun.build()` in `build.ts` — code-splitting bundle targeting Bun. Post-processing patches `import.meta.require` for Node.js compatibility, so built output runs on both Bun and Node.
 - **Module system**: ESM (`"type": "module"`), TSX with `react-jsx` transform.
 - **Monorepo**: Bun workspaces — internal packages live in `packages/` resolved via `workspace:*`.
 
@@ -105,6 +120,19 @@ All `feature('FLAG_NAME')` calls come from `bun:bundle` (a build-time API). In t
 - **`src/types/internal-modules.d.ts`** — Type declarations for `bun:bundle`, `bun:ffi`, `@anthropic-ai/mcpb`.
 - **`src/types/message.ts`** — Message type hierarchy (UserMessage, AssistantMessage, SystemMessage, etc.).
 - **`src/types/permissions.ts`** — Permission mode and result types.
+
+### Testing
+
+- **Framework**: `bun:test` (Bun's built-in test runner). Tests use `describe`/`test`/`expect` from `"bun:test"`.
+- **Convention**: Test files use `*.test.ts` suffix, placed in colocated `__tests__/` directories next to the source they test.
+- **Coverage**: Tests exist primarily for utilities (`src/utils/__tests__/`), model helpers (`src/utils/model/__tests__/`), permissions (`src/utils/permissions/__tests__/`), tool utilities (`src/tools/FileEditTool/__tests__/`), and a workspace package (`packages/color-diff-napi/`).
+
+### Linting
+
+- **Biome** is used for both linting and formatting. Config in `biome.json`.
+- Many lint rules are intentionally disabled due to the decompiled nature of the code (e.g., `noExplicitAny`, `noUnusedVariables`, `useConst`).
+- Formatting is disabled for `scripts/**`, `packages/**`, and plain JS files.
+- `.tsx` files use 120-char line width with semicolons always; `.ts` files use 80-char width with semicolons as-needed.
 
 ## Working with This Codebase
 
